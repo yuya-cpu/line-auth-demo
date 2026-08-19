@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { createAuthMiddleware } from "better-auth/api";
-import { upsertLineUser } from "@/lib/line-users";
+import { saveLineProfileFromUser } from "@/lib/line-users";
 
 function appUrl() {
   if (process.env.BETTER_AUTH_URL) {
@@ -64,20 +64,17 @@ export const auth = betterAuth({
       if (!isLineCallback) return;
       if (provider && provider !== "line") return;
 
-      const session = ctx.context.newSession;
-      const name = session?.user?.name;
-      const lineId = session?.user?.email?.replace(/@line\.invalid$/, "");
-      if (!name || !lineId) {
-        console.error("[line.users] skip: missing name or lineId", {
+      const user = ctx.context.newSession?.user;
+      if (!user) {
+        console.error("[line.users] skip: no newSession", {
           path: ctx.path,
           provider,
-          hasSession: Boolean(session),
         });
         return;
       }
 
       try {
-        await upsertLineUser(lineId, name);
+        await saveLineProfileFromUser(user);
       } catch (error) {
         console.error("[line.users] upsert failed", error);
       }

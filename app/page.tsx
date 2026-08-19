@@ -1,11 +1,20 @@
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
+import { saveLineProfileFromUser } from "@/lib/line-users";
 import { LoginButton, LogoutButton } from "./login-button";
 
 export default async function Home() {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
+
+  if (session?.user) {
+    try {
+      await saveLineProfileFromUser(session.user);
+    } catch (error) {
+      console.error("[line.users] home upsert failed", error);
+    }
+  }
 
   return (
     <div className="flex min-h-dvh flex-1 flex-col items-center justify-center bg-white px-6">

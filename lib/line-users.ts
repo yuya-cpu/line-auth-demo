@@ -1,13 +1,31 @@
 import { createHash } from "node:crypto";
 import { Pool } from "pg";
 
-const pool = new Pool({
-  connectionString:
+function postgresUrl() {
+  const raw =
+    process.env.POSTGRES_URL_NON_POOLING ??
     process.env.POSTGRES_URL ??
-    process.env.POSTGRES_PRISMA_URL ??
-    process.env.POSTGRES_URL_NON_POOLING,
-  ssl: { rejectUnauthorized: false },
-});
+    process.env.POSTGRES_PRISMA_URL;
+  if (!raw) {
+    throw new Error("POSTGRES_URL is not set");
+  }
+  return raw
+    .replace(/[?&]sslmode=[^&]*/gi, "")
+    .replace(/[?&]sslrootcert=[^&]*/gi, "")
+    .replace(/\?&/, "?")
+    .replace(/[?&]$/, "");
+}
+
+let pool: Pool | undefined;
+
+function getPool() {
+  pool ??= new Pool({
+    connectionString: postgresUrl(),
+    ssl: { rejectUnauthorized: false },
+    max: 1,
+  });
+  return pool;
+}
 
 const LINE_UUID_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 
@@ -22,11 +40,35 @@ function uuidFromLineId(lineId: string) {
 
 export async function upsertLineUser(lineId: string, name: string) {
   const id = uuidFromLineId(lineId);
-  await pool.query(
-    `insert into line.users (id, name)
-     values ($1::uuid, $2)
-     on conflict (id)
-     do update set name = excluded.name`,
-    [id, name]
-  );
+  const client = await getPool().connect();
+  try {
+    await client.query("create schema if not exists line");
+    await client.query(`
+      create table if not exists line.users (
+        id uuid primary key,
+        name text not null
+      )
+    `);
+    await client.query(
+      `insert into line.users (id, name)
+       values ($1::uuid, $2)
+       on conflict (id)
+       do update set name = excluded.name`,
+      [id, name]
+    );
+  } finally {
+    client.release();
+  }
+}
+
+export async function saveLineProfileFromUser(user: {
+  name?: string | null;
+  email?: string | null;
+}) {
+  const name = user.name;
+  const lineId = user.email?.endsWith("@line.invalid")
+    ? user.email.replace(/@line\.invalid$/, "")
+    : null;
+  if (!name || !lineId) return;
+  await upsertLineUser(lineId, name);
 }
