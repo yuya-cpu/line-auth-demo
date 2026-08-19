@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { Pool } from "pg";
+import { parse } from "pg-connection-string";
 
-function postgresUrl() {
+function getPool() {
   const raw =
     process.env.POSTGRES_URL_NON_POOLING ??
     process.env.POSTGRES_URL ??
@@ -9,21 +10,23 @@ function postgresUrl() {
   if (!raw) {
     throw new Error("POSTGRES_URL is not set");
   }
-  return raw
-    .replace(/[?&]sslmode=[^&]*/gi, "")
-    .replace(/[?&]sslrootcert=[^&]*/gi, "")
-    .replace(/\?&/, "?")
-    .replace(/[?&]$/, "");
+
+  const parsed = parse(raw);
+  return new Pool({
+    host: parsed.host ?? undefined,
+    port: parsed.port ? Number(parsed.port) : 5432,
+    user: parsed.user,
+    password: parsed.password,
+    database: parsed.database ?? undefined,
+    ssl: { rejectUnauthorized: false },
+    max: 1,
+  });
 }
 
 let pool: Pool | undefined;
 
-function getPool() {
-  pool ??= new Pool({
-    connectionString: postgresUrl(),
-    ssl: { rejectUnauthorized: false },
-    max: 1,
-  });
+function poolInstance() {
+  pool ??= getPool();
   return pool;
 }
 
@@ -40,7 +43,7 @@ function uuidFromLineId(lineId: string) {
 
 export async function upsertLineUser(lineId: string, name: string) {
   const id = uuidFromLineId(lineId);
-  const client = await getPool().connect();
+  const client = await poolInstance().connect();
   try {
     await client.query("create schema if not exists line");
     await client.query(`
@@ -56,19 +59,31 @@ export async function upsertLineUser(lineId: string, name: string) {
        do update set name = excluded.name`,
       [id, name]
     );
+    console.info("[line.users] saved");
   } finally {
     client.release();
   }
 }
 
 export async function saveLineProfileFromUser(user: {
+  id?: string;
   name?: string | null;
   email?: string | null;
 }) {
   const name = user.name;
+  if (!name) {
+    console.error("[line.users] skip: no name");
+    return;
+  }
+
   const lineId = user.email?.endsWith("@line.invalid")
     ? user.email.replace(/@line\.invalid$/, "")
-    : null;
-  if (!name || !lineId) return;
+    : user.id;
+
+  if (!lineId) {
+    console.error("[line.users] skip: no line id");
+    return;
+  }
+
   await upsertLineUser(lineId, name);
 }
