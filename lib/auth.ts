@@ -1,5 +1,7 @@
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
+import { createAuthMiddleware } from "better-auth/api";
+import { upsertLineUser } from "@/lib/line-users";
 
 function appUrl() {
   if (process.env.BETTER_AUTH_URL) {
@@ -22,6 +24,7 @@ export const auth = betterAuth({
   trustedOrigins: [
     baseURL,
     "http://localhost:3000",
+    "http://localhost:3001",
     "https://line-auth-demo.vercel.app",
     "https://line-auth-demo*.vercel.app",
   ],
@@ -50,6 +53,18 @@ export const auth = betterAuth({
         image: profile.picture,
       }),
     },
+  },
+  hooks: {
+    after: createAuthMiddleware(async (ctx) => {
+      if (!ctx.path.startsWith("/callback/line")) return;
+
+      const session = ctx.context.newSession;
+      const name = session?.user?.name;
+      const lineId = session?.user?.email?.replace(/@line\.invalid$/, "");
+      if (!name || !lineId) return;
+
+      await upsertLineUser(lineId, name);
+    }),
   },
   plugins: [nextCookies()],
 });
