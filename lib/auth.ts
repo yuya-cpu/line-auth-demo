@@ -56,14 +56,31 @@ export const auth = betterAuth({
   },
   hooks: {
     after: createAuthMiddleware(async (ctx) => {
-      if (!ctx.path.startsWith("/callback/line")) return;
+      const provider = ctx.params?.id;
+      const isLineCallback =
+        ctx.path === "/callback/:id" ||
+        ctx.path.startsWith("/callback/line") ||
+        provider === "line";
+      if (!isLineCallback) return;
+      if (provider && provider !== "line") return;
 
       const session = ctx.context.newSession;
       const name = session?.user?.name;
       const lineId = session?.user?.email?.replace(/@line\.invalid$/, "");
-      if (!name || !lineId) return;
+      if (!name || !lineId) {
+        console.error("[line.users] skip: missing name or lineId", {
+          path: ctx.path,
+          provider,
+          hasSession: Boolean(session),
+        });
+        return;
+      }
 
-      await upsertLineUser(lineId, name);
+      try {
+        await upsertLineUser(lineId, name);
+      } catch (error) {
+        console.error("[line.users] upsert failed", error);
+      }
     }),
   },
   plugins: [nextCookies()],

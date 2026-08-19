@@ -1,7 +1,11 @@
 import { Pool } from "pg";
 
 const pool = new Pool({
-  connectionString: process.env.POSTGRES_URL,
+  connectionString:
+    process.env.POSTGRES_URL ??
+    process.env.POSTGRES_PRISMA_URL ??
+    process.env.POSTGRES_URL_NON_POOLING,
+  ssl: { rejectUnauthorized: false },
 });
 
 export async function upsertLineUser(id: string, name: string) {
