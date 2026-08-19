@@ -19,7 +19,12 @@ const baseURL = appUrl();
 export const auth = betterAuth({
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
-  trustedOrigins: [baseURL],
+  trustedOrigins: [
+    baseURL,
+    "http://localhost:3000",
+    "https://line-auth-demo.vercel.app",
+    "https://line-auth-demo*.vercel.app",
+  ],
   session: {
     expiresIn: 60 * 60 * 24 * 7,
     cookieCache: {
